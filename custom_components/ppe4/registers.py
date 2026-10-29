@@ -157,6 +157,28 @@ def decode_faults(value: float | int | None, encoding: str) -> FaultState:
     return FaultState(raw=raw, codes=codes, unknown_bits=unknown)
 
 
+def build_write_group(
+    current: Mapping[int, float | int],
+    registers: "tuple[int, ...]",
+    target: int,
+    raw_value: int,
+) -> dict[int, int]:
+    """Return the group write payload with one register replaced.
+
+    The vendor app writes the whole settings group at once; preserving the
+    other members keeps unknown fields untouched.
+    """
+    if target not in registers:
+        return {target: raw_value}
+    values = {
+        register: int(current[register])
+        for register in registers
+        if register in current
+    }
+    values[target] = raw_value
+    return values
+
+
 def scale_value(raw: float | int | None, scale: float) -> float | None:
     """Apply a register scale factor."""
     if raw is None:

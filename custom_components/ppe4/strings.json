@@ -73,9 +73,6 @@
       "inlet_temperature": {
         "name": "Inlet temperature"
       },
-      "outlet_temperature": {
-        "name": "Outlet temperature"
-      },
       "flow_rate": {
         "name": "Flow rate"
       },
@@ -93,6 +90,9 @@
       },
       "active_faults": {
         "name": "Active faults"
+      },
+      "max_temperature": {
+        "name": "Maximum temperature"
       }
     },
     "binary_sensor": {

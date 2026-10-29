@@ -22,11 +22,11 @@ ENTITY_TRANSLATION_KEYS = {
     "water_heater": ("water_heater",),
     "sensor": (
         "inlet_temperature",
-        "outlet_temperature",
         "flow_rate",
         "power",
         "current_temperature",
         "target_temperature",
+        "max_temperature",
         "fault_code",
         "active_faults",
     ),

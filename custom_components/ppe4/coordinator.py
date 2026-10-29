@@ -14,6 +14,7 @@ from .api import Ppe4Client, Ppe4Error
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    INVALID_VALUE,
     LIVE_BLOCKS,
     MAX_TEMPERATURE,
     MIN_TEMPERATURE,
@@ -25,6 +26,7 @@ from .registers import (
     FaultConfig,
     FaultState,
     ResolvedRegister,
+    build_write_group,
     decode_faults,
     resolve_fault_config,
     resolve_register_map,
@@ -101,7 +103,10 @@ class Ppe4Coordinator(DataUpdateCoordinator[Ppe4Data]):
         resolved = self.register_map.get(key)
         if resolved is None:
             return None
-        return scale_value(self.data.registers.get(resolved.register), resolved.scale)
+        raw = self.data.registers.get(resolved.register)
+        if raw is None or raw == INVALID_VALUE:
+            return None
+        return scale_value(raw, resolved.scale)
 
     def raw_value(self, key: str) -> float | int | None:
         """Return one logical value without scaling."""
@@ -136,7 +141,9 @@ class Ppe4Coordinator(DataUpdateCoordinator[Ppe4Data]):
         scale = self.target_scale or 1.0
         raw_target = int(round(temperature / scale))
 
-        group = range(WRITE_GROUP_START, WRITE_GROUP_START + WRITE_GROUP_COUNT)
+        group = tuple(
+            range(WRITE_GROUP_START, WRITE_GROUP_START + WRITE_GROUP_COUNT)
+        )
         if target in group:
             try:
                 current = await self.client.async_read_block(
@@ -146,15 +153,9 @@ class Ppe4Coordinator(DataUpdateCoordinator[Ppe4Data]):
                 raise Ppe4Error(
                     "Cannot read the settings group before writing the setpoint"
                 ) from err
-            values = {
-                register: int(current[register])
-                for register in group
-                if register in current
-            }
+            values = build_write_group(current, group, target, raw_target)
         else:
-            values = {}
-
-        values[target] = raw_target
+            values = {target: raw_target}
         try:
             await self.client.async_write_registers(values)
         except Ppe4Error as err:

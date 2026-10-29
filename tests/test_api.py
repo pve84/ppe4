@@ -144,16 +144,20 @@ def test_read_blocks_merges() -> None:
     asyncio.run(run())
 
 
-def test_write_registers_sends_string_keys() -> None:
-    """Writes use the JSON object the vendor app sends."""
+def test_write_registers_sends_compact_json() -> None:
+    """Writes use the compact JSON body the module's parser requires."""
 
     async def run() -> None:
-        client, session = make_client(FakeResponse(payload={"ok": True}))
-        await client.async_write_registers({1390: 450, 1391: 0})
+        client, session = make_client(
+            FakeResponse(payload={"ver": "1.0", "status": "OK", "status_value": "0"})
+        )
+        await client.async_write_registers({1391: 470, 1392: 450})
         method, url, kwargs = session.calls[0]
         assert method == "POST"
         assert url.endswith("/api/write")
-        assert kwargs["json"] == {"1390": 450, "1391": 0}
+        assert "json" not in kwargs
+        assert kwargs["data"] == '{"1391":470,"1392":450}'
+        assert kwargs["headers"]["Content-Type"] == "application/json"
 
     asyncio.run(run())
 
@@ -165,6 +169,46 @@ def test_write_registers_noop_when_empty() -> None:
         client, session = make_client()
         await client.async_write_registers({})
         assert session.calls == []
+
+    asyncio.run(run())
+
+
+def test_read_block_unwraps_device_envelope() -> None:
+    """The module wraps registers in a status envelope."""
+
+    async def run() -> None:
+        client, _ = make_client(
+            FakeResponse(
+                payload={
+                    "ver": "1.0",
+                    "status": "OK",
+                    "status_value": "0",
+                    "res": {"1388": 600, "1391": 500},
+                }
+            )
+        )
+        registers = await client.async_read_block(1388, 8)
+        assert registers == {1388: 600, 1391: 500}
+
+    asyncio.run(run())
+
+
+def test_device_error_is_reported() -> None:
+    """A logical module error becomes a protocol error with its message."""
+
+    async def run() -> None:
+        client, _ = make_client(
+            FakeResponse(
+                payload={
+                    "ver": "1.0",
+                    "status": "ERROR",
+                    "status_value": "-11",
+                    "status_msg": "Wrong MODBUS start address.",
+                }
+            )
+        )
+        with pytest.raises(Ppe4ProtocolError, match="Wrong MODBUS start address"):
+            await client.async_read_block(1, 1)
 
     asyncio.run(run())
 

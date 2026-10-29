@@ -44,6 +44,17 @@ def _as_device_class(value: str | None) -> SensorDeviceClass | None:
         return None
 
 
+def _as_entity_category(value: str | None) -> EntityCategory | None:
+    """Return an EntityCategory for a constant name, if valid."""
+    if not value:
+        return None
+    try:
+        return EntityCategory(value)
+    except ValueError:
+        _LOGGER.debug("Unsupported entity category: %s", value)
+        return None
+
+
 def _as_state_class(value: str | None) -> SensorStateClass | None:
     """Return a SensorStateClass for a constant name, if valid."""
     if not value:
@@ -75,6 +86,7 @@ class Ppe4RegisterSensor(Ppe4Entity, SensorEntity):
         self._attr_state_class = description.state_class
         self._attr_suggested_display_precision = description.suggested_display_precision
         self._attr_icon = description.icon
+        self._attr_entity_category = description.entity_category
 
     @property
     def native_value(self) -> float | None:
@@ -161,6 +173,7 @@ def _build_descriptions(coordinator: Ppe4Coordinator) -> list[Ppe4SensorDescript
                 state_class=_as_state_class(spec.state_class),
                 suggested_display_precision=spec.precision,
                 icon=spec.icon,
+                entity_category=_as_entity_category(spec.entity_category),
             )
         )
     return descriptions

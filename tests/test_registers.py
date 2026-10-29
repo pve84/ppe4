@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from custom_components.ppe4.const import FAULT_ENCODING_BITMASK, FAULT_ENCODING_CODE
 from custom_components.ppe4.registers import (
+    build_write_group,
     decode_faults,
     resolve_fault_config,
     resolve_register_map,
@@ -14,12 +15,13 @@ from custom_components.ppe4.registers import (
 def test_default_register_map() -> None:
     """The shipped map resolves to the recovered registers."""
     register_map = resolve_register_map()
-    assert register_map["current_temperature"].register == 1388
-    assert register_map["target_temperature"].register == 1390
+    assert register_map["current_temperature"].register == 1135
+    assert register_map["target_temperature"].register == 1391
+    assert register_map["target_temperature"].scale == 0.1
     assert register_map["flow_rate"].register == 1137
     assert register_map["power"].register == 1138
     assert register_map["inlet_temperature"].register == 1134
-    assert register_map["outlet_temperature"].register == 1135
+    assert register_map["max_temperature"].register == 1388
 
 
 def test_register_override_integer() -> None:
@@ -32,9 +34,9 @@ def test_register_override_integer() -> None:
 def test_register_override_with_scale() -> None:
     """A two-element override also replaces the scale."""
     register_map = resolve_register_map(
-        {"registers": {"target_temperature": [1390, 1.0]}}
+        {"registers": {"target_temperature": [1391, 1.0]}}
     )
-    assert register_map["target_temperature"].register == 1390
+    assert register_map["target_temperature"].register == 1391
     assert register_map["target_temperature"].scale == 1.0
 
 
@@ -43,7 +45,7 @@ def test_invalid_override_is_ignored() -> None:
     register_map = resolve_register_map(
         {"registers": {"current_temperature": "nope", "unknown": 1}}
     )
-    assert register_map["current_temperature"].register == 1388
+    assert register_map["current_temperature"].register == 1135
 
 
 def test_fault_config_disabled_by_default() -> None:
@@ -93,6 +95,19 @@ def test_decode_zero_and_none() -> None:
     """Zero and missing values mean no faults."""
     assert decode_faults(0, FAULT_ENCODING_BITMASK).codes == ()
     assert decode_faults(None, FAULT_ENCODING_BITMASK).codes == ()
+
+
+def test_build_write_group_preserves_members() -> None:
+    """Only the target register changes in the group write."""
+    current = {1390: 0, 1391: 500, 1392: 450, 1393: 500, 1394: 550}
+    values = build_write_group(current, tuple(range(1390, 1395)), 1391, 470)
+    assert values == {1390: 0, 1391: 470, 1392: 450, 1393: 500, 1394: 550}
+
+
+def test_build_write_group_single_register() -> None:
+    """A target outside the group is written alone."""
+    values = build_write_group({1390: 0}, (1390, 1391), 1200, 470)
+    assert values == {1200: 470}
 
 
 def test_scale_value() -> None:

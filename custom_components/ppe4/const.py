@@ -44,6 +44,9 @@ LIVE_BLOCKS: Final[tuple[tuple[int, int], ...]] = (
 WRITE_GROUP_START: Final = 1390
 WRITE_GROUP_COUNT: Final = 5
 
+#: Value the module uses for "no reading" (signed -1).
+INVALID_VALUE: Final = 65535
+
 #: Number of fault bits described by the shipped fault catalogue.
 FAULT_COUNT: Final = 29
 
@@ -128,6 +131,7 @@ class RegisterSpec:
     state_class: str | None = "measurement"
     precision: int | None = None
     icon: str | None = None
+    entity_category: str | None = None
 
 
 #: Registers with a proven unit (``%1.1f °C``, ``%1.1f l/min``, ``%1.1f kW``
@@ -144,9 +148,9 @@ REGISTER_SPECS: Final[tuple[RegisterSpec, ...]] = (
         precision=1,
     ),
     RegisterSpec(
-        key="outlet_temperature",
+        key="current_temperature",
         register=1135,
-        translation_key="outlet_temperature",
+        translation_key="current_temperature",
         unit="°C",
         device_class="temperature",
         precision=1,
@@ -170,22 +174,25 @@ REGISTER_SPECS: Final[tuple[RegisterSpec, ...]] = (
         precision=1,
     ),
     RegisterSpec(
-        key="current_temperature",
-        register=1388,
-        translation_key="current_temperature",
-        unit="°C",
-        device_class="temperature",
-        precision=1,
-    ),
-    RegisterSpec(
         key="target_temperature",
-        register=1390,
+        register=1391,
         translation_key="target_temperature",
         unit="°C",
         device_class="temperature",
         state_class=None,
-        precision=0,
+        precision=1,
         icon="mdi:thermometer-check",
+    ),
+    RegisterSpec(
+        key="max_temperature",
+        register=1388,
+        translation_key="max_temperature",
+        unit="°C",
+        device_class="temperature",
+        state_class=None,
+        precision=1,
+        icon="mdi:thermometer-high",
+        entity_category="diagnostic",
     ),
 )
 

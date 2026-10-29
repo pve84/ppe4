@@ -5,12 +5,13 @@ water heater (`pl.PPE4`).  It talks to the heater's Wi-Fi module over the same
 plain-HTTP register API the vendor Android app uses — no cloud, no account, no
 TLS.
 
-> **Status:** the transport, endpoints and fault catalogue are recovered from
-> the shipped Android app and are solid.  The *physical meaning* of individual
-> registers (which one is inlet vs. outlet vs. setpoint) is **inferred**; units
-> (`°C`, `L/min`, `kW`) are proven.  Every register can be remapped from the
-> options flow, and `read_registers` / `write_registers` actions plus the
-> diagnostics download make it easy to calibrate against real hardware.
+> **Status:** verified against a real PPE4.M (firmware API `ver 1.0`) on
+> 2026-10-29: register reads, the JSON envelope, the error replies and a
+> setpoint round-trip (50.0 °C → 47.0 °C → 50.0 °C) all work.  The register map
+> below is the verified one; the fault register is still unknown.  Every value
+> can be remapped from the options flow, and `read_registers` /
+> `write_registers` actions plus the diagnostics download make further
+> calibration straightforward.
 
 ## What you get
 
@@ -36,9 +37,25 @@ The module serves a small REST API on TCP/80.  Registers are Modbus-style
 holding registers addressed by decimal number (the app uses 1000–1695).
 
 ```text
-GET  http://<host>/api/<start>/<count>   ->  {"<register>": <value>, ...}
-POST http://<host>/api/write             <-  {"<register>": <value>, ...}
+GET  http://<host>/api/<start>/<count>
+ ->  {"ver":"1.0","status":"OK","status_value":"0",
+      "res":{"<register>": <value>, ...}}
+
+POST http://<host>/api/write        body: {"<register>":<value>, ...}   (compact!)
+ <-  {"ver":"1.0","status":"OK","status_value":"0"}
 ```
+
+Quirks confirmed on hardware:
+
+* every answer is wrapped in the `ver`/`status`/`status_value`/`res` envelope;
+  `status` is `"OK"` or `"ERROR"` and errors carry `status_msg`;
+* **write bodies must be compact JSON** — the module's parser rejects spaces
+  with `status_value -10` ("A character that is not allowed was used"); the
+  client serialises with `separators=(",", ":")` instead of aiohttp's `json=`;
+* out-of-range reads answer `"res":` (invalid JSON) with `status OK`, and
+  reading a non-register path returns `-11` ("Wrong MODBUS start address.");
+* `65535` is the module's “no reading” marker (signed `-1`) and is surfaced as
+  unavailable.
 
 The integration polls three live blocks every 30 s by default:
 
@@ -58,26 +75,23 @@ unknown fields keep their values.
 
 ## Register map and confidence
 
-| Logical value | Register | Unit | Confidence | Why |
-|---|---|---|---|---|
-| Inlet temperature | 1134 | °C ×0.1 | inferred | `%1.1f °C` literal sits next to it |
-| Outlet temperature | 1135 | °C ×0.1 | inferred | same block |
-| Flow rate | 1137 | L/min ×0.1 | **proven unit** | `%1.1f l/min` literal |
-| Heater power | 1138 | kW ×0.1 | **proven unit** | `%1.1f kW` literal |
-| Water temperature | 1388 | °C ×0.1 | measured | `%1.1f °C` literal |
-| Target temperature | 1390 | °C ×1 | inferred | first register of the group the app writes |
-| Fault word | — | — | unknown | enable it once you identify the register |
+| Logical value | Register | Scale | Verified how |
+|---|---|---|---|
+| Inlet temperature (Tin) | 1134 | ×0.1 | app labels `lTin`; reads 26.7 °C on cold water |
+| Water temperature (Tout) | 1135 | ×0.1 | app labels `lTout`; reads 26.6 °C on cold water |
+| Flow rate | 1137 | ×0.1 | `%1.1f l/min` literal at this register |
+| Heater power | 1138 | ×0.1 | `%1.1f kW` literal at this register |
+| Target temperature | 1391 | ×0.1 | **written and read back on hardware**: 500 → 470 → 500 |
+| Live setpoint echo | 1140 | ×0.1 | followed 1391 during the write test |
+| Maximum temperature | 1388 | ×0.1 | reads 60.0 °C; app labels `lTemperaturaMaksymalna` |
+| Fault word | — | — | **unknown** — enable once identified |
 
-"Proven unit" means the vendor app formats that register with that unit.
-"Measured" means the unit is proven and the value tracks the water
-temperature; "inferred" means the assignment is our best reading of the app's
-UI order and can be wrong on your firmware.
+The five-register group the vendor app writes is `1390–1394`
+(`{"1390":0,"1391":<setpoint>,"1392":450,"1393":500,"1394":550}` on the test
+unit); the integration preserves the other four when changing the setpoint.
 
-Scale `0.1` means the register holds tenths (`452` → `45.2`).  Target
-temperature defaults to whole degrees because the app writes integer
-setpoints.  If your heater shows 4.5 °C after setting 45 °C, set the override
-`{"target_temperature": [1390, 0.1]}`; if the measured temperatures are ten
-times too high, use scale `1` instead of `0.1`.
+Scale `0.1` means the register holds tenths (`500` → `50.0`).  If your firmware
+uses whole degrees, override the scale in the options.
 
 ## Installation
 
@@ -150,6 +164,8 @@ straightforward:
    water.  The registers that move are your temperatures and flow.
 2. Compare the numbers with the heater's own display (or the vendor app):
    `452` on a 45.2 °C reading means scale `0.1`, `45` means scale `1`.
+3. The setpoint lives at 1391 and is mirrored at 1140; changing it via
+   `ppe4.write_registers` (compact JSON is produced by the client) updates both.
 3. To find the fault register, trigger a fault (e.g. close the water inlet) and
    diff the `registers` map in *Settings → Devices & services → KOSPEL PPE4 →
    Download diagnostics*.  Enable fault handling with that register and choose
@@ -205,11 +221,29 @@ in the installation manual.
 | *Could not read registers* | Ping the module, confirm port 80, confirm Home Assistant is on the same Wi-Fi/LAN |
 | Values are 10× too high | Set scale `1` for that register in the overrides |
 | Values are 10× too low | Set scale `0.1` for that register |
-| Target temperature has no effect | Try `"target_temperature": [1390, 0.1]` or another register from the calibration diff |
+| Target temperature has no effect | Confirm 1391 changes in the diagnostics; older firmware may use 1390 |
+| Write returns `-10` | Body contained whitespace/non-compact JSON — use the integration, not hand-written curl |
 | Faults never appear | Configure the fault register and encoding in the options |
 
 Diagnostics (*Download diagnostics*) include the resolved register map, the raw
 register dump and the decoded fault state.
+
+## Hardware verification (2026-10-29)
+
+Tested against a live PPE4.M at `192.168.2.165` (API `ver 1.0`):
+
+| Check | Result |
+|---|---|
+| `GET /api/1014/8`, `1128/25`, `1388/8` | 41 registers read, envelope parsed |
+| `GET http://<host>/` | module's "KOSPEL PPE4 Wi-Fi configuration" page |
+| Setpoint write 50.0 → 47.0 °C | `OK`; 1391 = 470, live echo 1140 = 470 |
+| Restore 47.0 → 50.0 °C | `OK`; 1391 = 500, 1140 = 500 |
+| Spaced JSON body | rejected with `-10 A character that is not allowed was used` |
+| Out-of-range read | `Ppe4ProtocolError` (invalid empty `res`) |
+| Error path `/api/write` via GET | `-11 Wrong MODBUS start address.` |
+
+Measured values at test time: Tin 26.7 °C, Tout 26.6 °C, flow 0 L/min,
+power 0 kW, setpoint 50.0 °C, max temperature 60.0 °C (heater idle).
 
 ## Evidence and provenance
 
@@ -236,7 +270,7 @@ Concrete evidence for this integration:
 ## Development
 
 ```bash
-python3 -m pytest            # pure-python unit tests, no Home Assistant needed
+python3 -m pytest            # 33 pure-python unit tests, no Home Assistant needed
 ```
 
 For Home Assistant-level tests add

@@ -14,6 +14,7 @@ No authentication is used; the API is only reachable on the local network.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Final
 
@@ -90,16 +91,17 @@ class Ppe4Client:
         method: str,
         url: str,
         *,
-        json_body: Mapping[str, int] | None = None,
+        body: str | None = None,
     ) -> Any:
         """Perform one request and return the decoded JSON body."""
+        kwargs: dict[str, Any] = {"timeout": self.timeout}
+        if body is not None:
+            # The module's parser rejects whitespace, so the JSON body must be
+            # serialized compactly instead of using aiohttp's ``json=`` helper.
+            kwargs["data"] = body
+            kwargs["headers"] = {"Content-Type": "application/json"}
         try:
-            async with self._session.request(
-                method,
-                url,
-                json=json_body,
-                timeout=self.timeout,
-            ) as response:
+            async with self._session.request(method, url, **kwargs) as response:
                 if response.status != 200:
                     text = await response.text()
                     raise Ppe4ProtocolError(
@@ -107,11 +109,13 @@ class Ppe4Client:
                         f"{text[:200]}"
                     )
                 try:
-                    return await response.json(content_type=None)
+                    payload = await response.json(content_type=None)
                 except ValueError as err:
                     raise Ppe4ProtocolError(
                         f"{method} {url} returned invalid JSON"
                     ) from err
+                self._raise_for_device_error(payload)
+                return payload
         except Ppe4Error:
             raise
         except TimeoutError as err:
@@ -137,8 +141,26 @@ class Ppe4Client:
         return self._parse_registers(payload)
 
     @staticmethod
+    def _raise_for_device_error(payload: Any) -> None:
+        """Raise when the module reports a logical error.
+
+        The module answers with ``{"ver": "1.0", "status": "OK"|"ERROR",
+        "status_value": "...", "status_msg": "...", "res": {...}}``.
+        """
+        if not isinstance(payload, dict):
+            return
+        status = payload.get("status")
+        if status is None or status == "OK":
+            return
+        value = payload.get("status_value")
+        message = payload.get("status_msg") or "unknown module error"
+        raise Ppe4ProtocolError(f"Module error {value}: {message}")
+
+    @staticmethod
     def _parse_registers(payload: Any) -> dict[int, float | int]:
         """Convert a JSON register object into ``{register: value}``."""
+        if isinstance(payload, dict) and isinstance(payload.get("res"), dict):
+            payload = payload["res"]
         if not isinstance(payload, dict):
             raise Ppe4ProtocolError(
                 f"Expected a JSON object of registers, got {type(payload).__name__}"
@@ -170,8 +192,9 @@ class Ppe4Client:
         """Write one or more registers."""
         if not values:
             return
-        body = {str(int(register)): int(value) for register, value in values.items()}
-        await self._async_request("POST", self.write_url, json_body=body)
+        payload = {str(int(register)): int(value) for register, value in values.items()}
+        body = json.dumps(payload, separators=(",", ":"))
+        await self._async_request("POST", self.write_url, body=body)
 
     async def async_close(self) -> None:
         """Placeholder for symmetry; the session is owned by Home Assistant."""
