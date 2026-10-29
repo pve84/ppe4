@@ -78,7 +78,7 @@ class Ppe4RegisterSensor(Ppe4Entity, SensorEntity):
         description: Ppe4SensorDescription,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, description.unique_id or description.key)
+        super().__init__(coordinator, entry, description.key)
         self.entity_description = description
         self._attr_translation_key = description.translation_key or description.key
         self._attr_native_unit_of_measurement = description.native_unit_of_measurement

@@ -224,6 +224,7 @@ in the installation manual.
 | Target temperature has no effect | Confirm 1391 changes in the diagnostics; older firmware may use 1390 |
 | Write returns `-10` | Body contained whitespace/non-compact JSON — use the integration, not hand-written curl |
 | Faults never appear | Configure the fault register and encoding in the options |
+| No sensor entities after updating | Restart Home Assistant (a platform fixed in 0.1.1 only loads on restart). Check the log for `Error while setting up ppe4 platform for sensor` — that error is fixed in 0.1.1 |
 
 Diagnostics (*Download diagnostics*) include the resolved register map, the raw
 register dump and the decoded fault state.
@@ -270,11 +271,18 @@ Concrete evidence for this integration:
 ## Development
 
 ```bash
-python3 -m pytest            # 33 pure-python unit tests, no Home Assistant needed
+python3 -m pytest            # 33 unit tests + skips the HA ones
+
+# full harness (Home Assistant 2026.x in a venv)
+python3 -m venv ../.ha-venv
+../.ha-venv/bin/pip install pytest-homeassistant-custom-component
+../.ha-venv/bin/python -m pytest      # 33 unit + 2 Home Assistant integration tests
 ```
 
-For Home Assistant-level tests add
-`pytest-homeassistant-custom-component` (they require a full HA test harness).
+The Home Assistant level tests (`tests/test_ha_integration.py`) set the
+integration up in-process with a mocked module and assert that the water
+heater and all six sensors are created, and that changing the target
+temperature writes the expected five-register group.
 
 ```
 custom_components/ppe4/

@@ -1,7 +1,9 @@
 {
   "domain": "ppe4",
   "name": "KOSPEL PPE4",
-  "codeowners": ["@peter"],
+  "codeowners": [
+    "@peter"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/peter/ha-ppe4",
   "integration_type": "device",
@@ -9,5 +11,5 @@
   "issue_tracker": "https://github.com/peter/ha-ppe4/issues",
   "quality_scale": "bronze",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
