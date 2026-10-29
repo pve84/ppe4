@@ -16,7 +16,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import FAULTS, FAULTS_PL, FAULT_SPEC
+from .const import FAULTS, FAULTS_PL
 from .coordinator import Ppe4Coordinator
 from .entity import Ppe4Entity
 
@@ -94,67 +94,57 @@ class Ppe4RegisterSensor(Ppe4Entity, SensorEntity):
         return self.coordinator.scaled(self.entity_description.register_key)
 
 
-class Ppe4FaultCodeSensor(Ppe4Entity, SensorEntity):
-    """Raw fault register value."""
+class Ppe4ErrorSensor(Ppe4Entity, SensorEntity):
+    """All active heater errors in one sensor.
 
-    _attr_translation_key = FAULT_SPEC.translation_key
+    The state is ``OK`` when no error is reported, otherwise the decoded
+    ``code: text`` pairs joined with ``; ``.  The attributes always contain the
+    full decoded list (with Polish texts) and the raw register values, so a
+    fault is visible even when the state string is truncated.
+    """
+
+    _attr_translation_key = "error"
     _attr_icon = "mdi:alert-circle-outline"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: Ppe4Coordinator, entry: ConfigEntry) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, FAULT_SPEC.key)
+        super().__init__(coordinator, entry, "error")
 
     @property
-    def native_value(self) -> int | None:
-        """Return the raw fault word."""
-        if self.coordinator.data is None or self.coordinator.data.fault is None:
+    def native_value(self) -> str | None:
+        """Return the active errors as text."""
+        if self.coordinator.data is None or self.coordinator.data.error is None:
             return None
-        return self.coordinator.data.fault.raw
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Expose the encoding and the configured register."""
-        config = self.coordinator.fault_config
-        if config is None:
-            return None
-        return {"register": config.register, "encoding": config.encoding}
-
-
-class Ppe4ActiveFaultsSensor(Ppe4Entity, SensorEntity):
-    """Number of active faults, with the decoded texts as attributes."""
-
-    _attr_translation_key = "active_faults"
-    _attr_icon = "mdi:alert-outline"
-    _attr_native_unit_of_measurement = None
-
-    def __init__(self, coordinator: Ppe4Coordinator, entry: ConfigEntry) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator, entry, "active_faults")
-
-    @property
-    def native_value(self) -> int | None:
-        """Return the number of active faults."""
-        if self.coordinator.data is None or self.coordinator.data.fault is None:
-            return None
-        return len(self.coordinator.data.fault.codes)
+        state = self.coordinator.data.error
+        if not state.active:
+            return "OK"
+        parts = [
+            f"{code}: {FAULTS.get(code, f'Unknown error {code}')}"
+            for code in state.codes
+        ]
+        parts.extend(f"Unknown code {value}" for value in state.unknown)
+        return "; ".join(parts)[:255]
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return the decoded fault list."""
-        if self.coordinator.data is None or self.coordinator.data.fault is None:
+        """Return every decoded error and the raw register values."""
+        if self.coordinator.data is None or self.coordinator.data.error is None:
             return None
-        fault = self.coordinator.data.fault
+        state = self.coordinator.data.error
+        config = self.coordinator.error_config
         return {
-            "faults": [
-                {"code": code, "text": FAULTS.get(code, f"Unknown fault {code}")}
-                for code in fault.codes
+            "errors": [
+                {
+                    "code": code,
+                    "text": FAULTS.get(code, f"Unknown error {code}"),
+                    "text_pl": FAULTS_PL.get(code, ""),
+                }
+                for code in state.codes
             ],
-            "faults_pl": [
-                {"code": code, "text": FAULTS_PL.get(code, "")} for code in fault.codes
-            ],
-            "raw": fault.raw,
-            "unknown_bits": fault.unknown_bits,
+            "unknown_values": list(state.unknown),
+            "registers": {str(register): value for register, value in state.values.items()},
+            "error_registers": list(config.registers) if config else [],
+            "encoding": config.encoding if config else None,
         }
 
 
@@ -190,7 +180,5 @@ async def async_setup_entry(
         Ppe4RegisterSensor(coordinator, entry, description)
         for description in _build_descriptions(coordinator)
     ]
-    if coordinator.fault_config is not None:
-        entities.append(Ppe4FaultCodeSensor(coordinator, entry))
-        entities.append(Ppe4ActiveFaultsSensor(coordinator, entry))
+    entities.append(Ppe4ErrorSensor(coordinator, entry))
     async_add_entities(entities)

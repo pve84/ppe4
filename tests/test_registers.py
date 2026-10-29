@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from custom_components.ppe4.const import FAULT_ENCODING_BITMASK, FAULT_ENCODING_CODE
+from custom_components.ppe4.const import (
+    ERROR_ENCODING_BITMASK,
+    ERROR_ENCODING_CODE,
+)
 from custom_components.ppe4.registers import (
     build_write_group,
-    decode_faults,
-    resolve_fault_config,
+    decode_errors,
+    resolve_error_config,
     resolve_register_map,
     scale_value,
 )
@@ -48,53 +51,68 @@ def test_invalid_override_is_ignored() -> None:
     assert register_map["current_temperature"].register == 1135
 
 
-def test_fault_config_disabled_by_default() -> None:
-    """Fault handling is off until a register is configured."""
-    assert resolve_fault_config({}) is None
-    assert resolve_fault_config({"fault_encoding": "bitmask"}) is None
-
-
-def test_fault_config_enabled() -> None:
-    """A register plus encoding enables fault handling."""
-    config = resolve_fault_config({"fault_encoding": "bitmask", "fault_register": 1389})
+def test_error_config_defaults() -> None:
+    """Errors are decoded from the four default slots."""
+    config = resolve_error_config({})
     assert config is not None
-    assert config.register == 1389
-    assert config.encoding == FAULT_ENCODING_BITMASK
+    assert config.registers == (1130, 1131, 1132, 1133)
+    assert config.encoding == ERROR_ENCODING_CODE
+
+
+def test_error_config_from_string() -> None:
+    """A comma separated option overrides the slots."""
+    config = resolve_error_config({"error_registers": "1200, 1201"})
+    assert config is not None
+    assert config.registers == (1200, 1201)
+
+
+def test_error_config_disabled_without_registers() -> None:
+    """No valid registers disables error decoding."""
+    assert resolve_error_config({"error_registers": ""}) is None
+    assert resolve_error_config({"error_registers": "abc"}) is None
+
+
+def test_decode_code_slots() -> None:
+    """Each register holds one catalogue code."""
+    config = resolve_error_config({})
+    state = decode_errors({1130: 0, 1131: 4, 1132: 0, 1133: 0}, config)
+    assert state.codes == (4,)
+    assert state.active is True
+    assert state.values == {1130: 0, 1131: 4, 1132: 0, 1133: 0}
+
+
+def test_decode_no_errors() -> None:
+    """All-zero slots mean OK."""
+    config = resolve_error_config({})
+    state = decode_errors({1130: 0, 1131: 0, 1132: 0, 1133: 0}, config)
+    assert state.active is False
+    assert state.codes == ()
+
+
+def test_decode_code_out_of_catalogue() -> None:
+    """A value outside 1..29 is reported as unknown, not silently dropped."""
+    config = resolve_error_config({})
+    state = decode_errors({1130: 99, 1131: 0, 1132: 0, 1133: 0}, config)
+    assert state.codes == ()
+    assert state.unknown == (99,)
+    assert state.active is True
 
 
 def test_decode_bitmask() -> None:
     """Bit n maps to catalogue code n+1."""
-    state = decode_faults(0b101, FAULT_ENCODING_BITMASK)
-    assert state.codes == (1, 3)
-    assert state.raw == 5
-    assert state.unknown_bits == 0
+    config = resolve_error_config({"error_encoding": "bitmask"})
+    assert config is not None
+    state = decode_errors({1130: 0b1010}, config)
+    assert state.codes == (2, 4)
 
 
-def test_decode_bitmask_highest_code() -> None:
-    """Bit 28 is catalogue code 29."""
-    state = decode_faults(1 << 28, FAULT_ENCODING_BITMASK)
-    assert state.codes == (29,)
-
-
-def test_decode_bitmask_unknown_bits() -> None:
-    """Bits above the catalogue are reported separately."""
-    state = decode_faults((1 << 0) | (1 << 29), FAULT_ENCODING_BITMASK)
-    assert state.codes == (1,)
-    assert state.unknown_bits == 1
-
-
-def test_decode_code() -> None:
-    """Single-code encoding returns the code itself."""
-    assert decode_faults(7, FAULT_ENCODING_CODE).codes == (7,)
-    state = decode_faults(99, FAULT_ENCODING_CODE)
+def test_decode_ignores_invalid_sentinel() -> None:
+    """65535 means 'no reading' and is not an error."""
+    config = resolve_error_config({})
+    state = decode_errors({1130: 65535}, config)
     assert state.codes == ()
-    assert state.unknown_bits == 99
-
-
-def test_decode_zero_and_none() -> None:
-    """Zero and missing values mean no faults."""
-    assert decode_faults(0, FAULT_ENCODING_BITMASK).codes == ()
-    assert decode_faults(None, FAULT_ENCODING_BITMASK).codes == ()
+    assert state.unknown == ()
+    assert state.active is False
 
 
 def test_build_write_group_preserves_members() -> None:

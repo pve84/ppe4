@@ -23,12 +23,12 @@ from .const import (
 )
 from .registers import (
     OPTION_SCAN_INTERVAL,
-    FaultConfig,
-    FaultState,
+    ErrorConfig,
+    ErrorState,
     ResolvedRegister,
     build_write_group,
-    decode_faults,
-    resolve_fault_config,
+    decode_errors,
+    resolve_error_config,
     resolve_register_map,
     scale_value,
 )
@@ -44,7 +44,7 @@ class Ppe4Data:
     """Data returned by one poll of the heater."""
 
     registers: dict[int, float | int]
-    fault: FaultState | None
+    error: ErrorState | None
 
     def raw(self, register: int) -> float | int | None:
         """Return the raw value of one register."""
@@ -68,7 +68,7 @@ class Ppe4Coordinator(DataUpdateCoordinator[Ppe4Data]):
         self.register_map: dict[str, ResolvedRegister] = resolve_register_map(
             self._options
         )
-        self.fault_config: FaultConfig | None = resolve_fault_config(self._options)
+        self.error_config: ErrorConfig | None = resolve_error_config(self._options)
         scan_interval = self._options.get(OPTION_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         try:
             interval = int(scan_interval)
@@ -89,12 +89,37 @@ class Ppe4Coordinator(DataUpdateCoordinator[Ppe4Data]):
         except Ppe4Error as err:
             raise UpdateFailed(str(err)) from err
 
-        fault: FaultState | None = None
-        if self.fault_config is not None:
-            value = registers.get(self.fault_config.register)
-            fault = decode_faults(value, self.fault_config.encoding)
+        error: ErrorState | None = None
+        if self.error_config is not None:
+            await self._async_fill_error_registers(registers)
+            error = decode_errors(registers, self.error_config)
 
-        return Ppe4Data(registers=registers, fault=fault)
+        return Ppe4Data(registers=registers, error=error)
+
+    async def _async_fill_error_registers(
+        self, registers: dict[int, float | int]
+    ) -> None:
+        """Read error registers that are outside the polled live blocks."""
+        if self.error_config is None:
+            return
+        missing = [
+            register
+            for register in self.error_config.registers
+            if register not in registers
+        ]
+        if not missing:
+            return
+        start = min(missing)
+        count = max(missing) - start + 1
+        if count > 64:
+            _LOGGER.debug("Error registers %s span too many addresses", missing)
+            return
+        try:
+            extra = await self.client.async_read_block(start, count)
+        except Ppe4Error as err:
+            _LOGGER.debug("Could not read error registers %s: %s", missing, err)
+            return
+        registers.update(extra)
 
     def scaled(self, key: str) -> float | None:
         """Return one logical value with its scale applied."""
@@ -156,6 +181,7 @@ class Ppe4Coordinator(DataUpdateCoordinator[Ppe4Data]):
             values = build_write_group(current, group, target, raw_target)
         else:
             values = {target: raw_target}
+
         try:
             await self.client.async_write_registers(values)
         except Ppe4Error as err:

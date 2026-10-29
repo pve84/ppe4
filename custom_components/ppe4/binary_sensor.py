@@ -30,18 +30,23 @@ class Ppe4ProblemSensor(Ppe4Entity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool | None:
-        """Return true when a fault is active."""
+        """Return true when an error is active."""
         if self.coordinator.data is None:
             return None
-        return bool(self.coordinator.data.fault and self.coordinator.data.fault.raw)
+        error = self.coordinator.data.error
+        return bool(error and error.active)
 
     @property
-    def extra_state_attributes(self) -> dict[str, int] | None:
-        """Expose the decoded fault codes."""
-        if self.coordinator.data is None or self.coordinator.data.fault is None:
+    def extra_state_attributes(self) -> dict[str, object] | None:
+        """Expose the decoded error codes."""
+        if self.coordinator.data is None or self.coordinator.data.error is None:
             return None
-        fault = self.coordinator.data.fault
-        return {"codes": list(fault.codes), "raw": fault.raw}
+        error = self.coordinator.data.error
+        return {
+            "codes": list(error.codes),
+            "unknown_values": list(error.unknown),
+            "registers": {str(k): v for k, v in error.values.items()},
+        }
 
 
 async def async_setup_entry(
@@ -51,6 +56,4 @@ async def async_setup_entry(
 ) -> None:
     """Set up the binary sensors."""
     coordinator: Ppe4Coordinator = entry.runtime_data
-    if coordinator.fault_config is None:
-        return
     async_add_entities([Ppe4ProblemSensor(coordinator, entry)])

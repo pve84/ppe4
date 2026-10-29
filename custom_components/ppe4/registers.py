@@ -10,21 +10,21 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from .const import (
+    DEFAULT_ERROR_REGISTERS,
+    ERROR_ENCODING_BITMASK,
+    ERROR_ENCODING_CODE,
+    ERROR_ENCODINGS,
     FAULT_COUNT,
-    FAULT_ENCODING_CODE,
-    FAULT_ENCODING_NONE,
-    FAULT_ENCODINGS,
-    FAULT_SPEC,
     REGISTER_SPECS,
     RegisterSpec,
 )
 
 #: Option key holding the per-value register overrides.
 OPTION_REGISTERS: Final = "registers"
-#: Option key holding the optional fault register.
-OPTION_FAULT_REGISTER: Final = "fault_register"
-#: Option key selecting how the fault register is decoded.
-OPTION_FAULT_ENCODING: Final = "fault_encoding"
+#: Option key holding the registers that carry error codes.
+OPTION_ERROR_REGISTERS: Final = "error_registers"
+#: Option key selecting how the error registers are decoded.
+OPTION_ERROR_ENCODING: Final = "error_encoding"
 #: Option key for the polling interval.
 OPTION_SCAN_INTERVAL: Final = "scan_interval"
 
@@ -40,20 +40,25 @@ class ResolvedRegister:
 
 
 @dataclass(frozen=True, kw_only=True)
-class FaultConfig:
-    """Fault register configuration."""
+class ErrorConfig:
+    """Registers that carry error codes."""
 
-    register: int
+    registers: tuple[int, ...]
     encoding: str
 
 
 @dataclass(frozen=True, kw_only=True)
-class FaultState:
-    """Decoded fault state for one poll."""
+class ErrorState:
+    """Decoded error state for one poll."""
 
-    raw: int
     codes: tuple[int, ...]
-    unknown_bits: int = 0
+    values: dict[int, int]
+    unknown: tuple[int, ...] = ()
+
+    @property
+    def active(self) -> bool:
+        """Return True when at least one error is present."""
+        return bool(self.codes or self.unknown)
 
 
 def _parse_override(value: Any) -> tuple[int, float | None] | None:
@@ -101,60 +106,83 @@ def resolve_register_map(
     return resolved
 
 
-def resolve_fault_config(
-    options: Mapping[str, Any] | None = None,
-) -> FaultConfig | None:
-    """Return the fault register configuration, if enabled."""
-    options = options or {}
-    encoding = options.get(OPTION_FAULT_ENCODING, FAULT_ENCODING_NONE)
-    if encoding not in FAULT_ENCODINGS or encoding == FAULT_ENCODING_NONE:
-        return None
-    raw_register = options.get(OPTION_FAULT_REGISTER)
-    if raw_register in (None, "", "none"):
-        return None
-    try:
-        register = int(raw_register)
-    except (TypeError, ValueError):
-        return None
-    if register <= 0:
-        return None
-    return FaultConfig(register=register, encoding=str(encoding))
-
-
-def fault_register_spec(config: FaultConfig) -> RegisterSpec:
-    """Return the spec used for the raw fault register sensor."""
-    return RegisterSpec(
-        key=FAULT_SPEC.key,
-        register=config.register,
-        translation_key=FAULT_SPEC.translation_key,
-        scale=FAULT_SPEC.scale,
-        unit=None,
-        device_class=None,
-        state_class=None,
-        icon=FAULT_SPEC.icon,
-    )
-
-
-def decode_faults(value: float | int | None, encoding: str) -> FaultState:
-    """Decode the fault register value into catalogue codes.
-
-    ``bitmask`` uses bit ``n`` for catalogue code ``n + 1`` (29 bits).
-    ``code`` treats the value itself as a catalogue code.
-    """
+def _parse_register_list(value: Any) -> tuple[int, ...]:
+    """Parse a comma separated string or list of register numbers."""
     if value is None:
-        return FaultState(raw=0, codes=())
-    raw = int(value)
-    if raw == 0:
-        return FaultState(raw=0, codes=())
+        return DEFAULT_ERROR_REGISTERS
+    if isinstance(value, str):
+        items: list[Any] = [item for item in value.replace(";", ",").split(",")]
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        return DEFAULT_ERROR_REGISTERS
+    registers: list[int] = []
+    for item in items:
+        if isinstance(item, str):
+            item = item.strip()
+            if not item:
+                continue
+        try:
+            register = int(item)
+        except (TypeError, ValueError):
+            continue
+        if register > 0:
+            registers.append(register)
+    return tuple(registers)
 
-    if encoding == FAULT_ENCODING_CODE:
-        if 1 <= raw <= FAULT_COUNT:
-            return FaultState(raw=raw, codes=(raw,))
-        return FaultState(raw=raw, codes=(), unknown_bits=raw)
 
-    codes = tuple(bit + 1 for bit in range(FAULT_COUNT) if raw & (1 << bit))
-    unknown = raw >> FAULT_COUNT
-    return FaultState(raw=raw, codes=codes, unknown_bits=unknown)
+def resolve_error_config(
+    options: Mapping[str, Any] | None = None,
+) -> ErrorConfig | None:
+    """Return the error register configuration.
+
+    Error handling is always on unless it is explicitly disabled; the default
+    registers are the four code slots recovered from the vendor app.
+    """
+    options = options or {}
+    encoding = str(options.get(OPTION_ERROR_ENCODING, ERROR_ENCODING_CODE))
+    if encoding not in ERROR_ENCODINGS:
+        encoding = ERROR_ENCODING_CODE
+    registers = _parse_register_list(options.get(OPTION_ERROR_REGISTERS))
+    if not registers:
+        return None
+    return ErrorConfig(registers=registers, encoding=encoding)
+
+
+def decode_errors(
+    registers: Mapping[int, float | int], config: ErrorConfig
+) -> ErrorState:
+    """Decode the configured error registers.
+
+    ``code`` treats each register as one catalogue code (1..29).
+    ``bitmask`` treats each register as a bitfield where bit ``n`` is code
+    ``n + 1`` (up to 16 codes per register).
+    """
+    codes: list[int] = []
+    values: dict[int, int] = {}
+    unknown: list[int] = []
+
+    for register in config.registers:
+        raw_value = registers.get(register)
+        if raw_value is None:
+            continue
+        raw = int(raw_value)
+        values[register] = raw
+        if raw in (0, 65535):
+            continue
+        if config.encoding == ERROR_ENCODING_BITMASK:
+            for bit in range(16):
+                if raw & (1 << bit):
+                    code = bit + 1
+                    if code <= FAULT_COUNT and code not in codes:
+                        codes.append(code)
+        elif 1 <= raw <= FAULT_COUNT:
+            if raw not in codes:
+                codes.append(raw)
+        else:
+            unknown.append(raw)
+
+    return ErrorState(codes=tuple(codes), values=values, unknown=tuple(unknown))
 
 
 def build_write_group(

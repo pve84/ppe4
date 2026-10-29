@@ -27,8 +27,7 @@ ENTITY_TRANSLATION_KEYS = {
         "current_temperature",
         "target_temperature",
         "max_temperature",
-        "fault_code",
-        "active_faults",
+        "error",
     ),
     "binary_sensor": ("problem",),
     "button": ("refresh",),
@@ -68,7 +67,7 @@ def test_config_flow_errors_translated() -> None:
     strings = json.loads((COMPONENT / "strings.json").read_text())
     assert "cannot_connect" in strings["config"]["error"]
     assert "invalid_registers" in strings["options"]["error"]
-    assert "fault_register_required" in strings["options"]["error"]
+    assert "error_registers_required" in strings["options"]["error"]
 
 
 def test_services_file_parses() -> None:

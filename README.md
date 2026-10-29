@@ -24,9 +24,8 @@ TLS.
 | `sensor.kospel_ppe4_outlet_temperature` | sensor | outlet temperature |
 | `sensor.kospel_ppe4_flow_rate` | sensor | water flow in L/min |
 | `sensor.kospel_ppe4_heater_power` | sensor | heating power in kW |
-| `sensor.kospel_ppe4_fault_code` | diagnostic sensor | raw fault word (when a fault register is configured) |
-| `sensor.kospel_ppe4_active_faults` | sensor | number of active faults; decoded texts in the attributes |
-| `binary_sensor.kospel_ppe4_problem` | problem | on when any fault is reported |
+| `sensor.kospel_ppe4_error` | sensor | **all active errors** as `code: text` (state `OK` when healthy); full list, Polish text and raw registers in the attributes |
+| `binary_sensor.kospel_ppe4_problem` | problem | on when any error code is reported |
 | `button.kospel_ppe4_refresh` | button | poll the heater immediately |
 
 Plus two actions: `ppe4.read_registers` and `ppe4.write_registers`.
@@ -116,8 +115,10 @@ directory and restart.
 ### Options
 
 * **Polling interval** — 5–600 s (default 30).
-* **Fault register / encoding** — leave *No fault handling* until you know the
-  register; see *Calibrating* below.
+* **Error registers / encoding** — default `1130,1131,1132,1133` in *code*
+  mode (each register holds one error code 1–29).  Change them if a fault
+  shows up in different registers; *bitmask* mode decodes each register as a
+  bitfield (bit *n* = code *n+1*).
 * **Register overrides (JSON)** — remap any value, optionally with a scale:
 
 ```json
@@ -166,17 +167,22 @@ straightforward:
    `452` on a 45.2 °C reading means scale `0.1`, `45` means scale `1`.
 3. The setpoint lives at 1391 and is mirrored at 1140; changing it via
    `ppe4.write_registers` (compact JSON is produced by the client) updates both.
-3. To find the fault register, trigger a fault (e.g. close the water inlet) and
-   diff the `registers` map in *Settings → Devices & services → KOSPEL PPE4 →
-   Download diagnostics*.  Enable fault handling with that register and choose
-   *bitmask* (bit *n* = fault *n+1*) or *single fault code*.
+3. To confirm the error registers, trigger a fault (e.g. close the water inlet)
+   and diff the `registers` map in *Settings → Devices & services → KOSPEL
+   PPE4 → Download diagnostics*.  The default slots are `1130–1133`; if the
+   changing register is elsewhere, set it in the options (comma separated,
+   *code* or *bitmask*).
 4. Store any correction in the options *Register overrides*.
 
 ## Fault catalogue
 
-The app ships 29 fault texts (`IDS_62`–`IDS_90`).  They are exposed by
-`sensor.kospel_ppe4_active_faults` (attributes) and
-`binary_sensor.kospel_ppe4_problem` once a fault register is configured:
+The app ships 29 fault texts (`IDS_62`–`IDS_90`).  `sensor.kospel_ppe4_error`
+decodes the configured error registers and shows every active code, e.g.
+`4: Temperature sensor error, negative power`; the attributes carry the full
+list (`code`, English text, Polish text), the raw register values and the
+registers/encoding in use.  `binary_sensor.kospel_ppe4_problem` turns on for
+any non-zero code, including codes outside the catalogue (shown as
+`Unknown code N`).
 
 | Code | Meaning |
 |---|---|
@@ -223,7 +229,7 @@ in the installation manual.
 | Values are 10× too low | Set scale `0.1` for that register |
 | Target temperature has no effect | Confirm 1391 changes in the diagnostics; older firmware may use 1390 |
 | Write returns `-10` | Body contained whitespace/non-compact JSON — use the integration, not hand-written curl |
-| Faults never appear | Configure the fault register and encoding in the options |
+| `sensor.kospel_ppe4_error` stays `OK` while the heater shows an error | The code is in a different register: trigger the fault, open the sensor attributes (or diagnostics) and set the register that changed in the options |
 | No sensor entities after updating | Restart Home Assistant (a platform fixed in 0.1.1 only loads on restart). Check the log for `Error while setting up ppe4 platform for sensor` — that error is fixed in 0.1.1 |
 
 Diagnostics (*Download diagnostics*) include the resolved register map, the raw

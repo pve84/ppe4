@@ -26,13 +26,13 @@ async def async_get_config_entry_diagnostics(
     if data is not None:
         registers = {str(key): value for key, value in sorted(data.registers.items())}
 
-    fault: dict[str, Any] | None = None
-    if data is not None and data.fault is not None:
-        fault = {
-            "raw": data.fault.raw,
-            "codes": list(data.fault.codes),
-            "texts": [FAULTS.get(code) for code in data.fault.codes],
-            "unknown_bits": data.fault.unknown_bits,
+    errors: dict[str, Any] | None = None
+    if data is not None and data.error is not None:
+        errors = {
+            "codes": list(data.error.codes),
+            "texts": [FAULTS.get(code) for code in data.error.codes],
+            "unknown_values": list(data.error.unknown),
+            "registers": {str(k): v for k, v in data.error.values.items()},
         }
 
     return {
@@ -42,14 +42,14 @@ async def async_get_config_entry_diagnostics(
             key: {"register": resolved.register, "scale": resolved.scale}
             for key, resolved in coordinator.register_map.items()
         },
-        "fault_config": (
+        "error_config": (
             None
-            if coordinator.fault_config is None
+            if coordinator.error_config is None
             else {
-                "register": coordinator.fault_config.register,
-                "encoding": coordinator.fault_config.encoding,
+                "registers": list(coordinator.error_config.registers),
+                "encoding": coordinator.error_config.encoding,
             }
         ),
         "registers": registers,
-        "fault": fault,
+        "errors": errors,
     }

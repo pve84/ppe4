@@ -86,14 +86,24 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
-@pytest.fixture
-def mock_device(aioclient_mock):
-    """Serve the three live blocks."""
-    for (start, count), registers in BLOCKS.items():
+def _mock_device(aioclient_mock, overrides: dict[str, int] | None = None):
+    """Serve the three live blocks, optionally with register overrides."""
+    blocks = {key: dict(values) for key, values in BLOCKS.items()}
+    for register, value in (overrides or {}).items():
+        for values in blocks.values():
+            if register in values:
+                values[register] = value
+    for (start, count), registers in blocks.items():
         aioclient_mock.get(
             f"http://{HOST}:80/api/{start}/{count}", json=envelope(registers)
         )
     return aioclient_mock
+
+
+@pytest.fixture
+def mock_device(aioclient_mock):
+    """Serve the three live blocks."""
+    return _mock_device(aioclient_mock)
 
 
 async def _setup_entry(hass: HomeAssistant) -> MockConfigEntry:
@@ -129,7 +139,38 @@ async def test_setup_creates_entities(hass: HomeAssistant, mock_device) -> None:
     assert states["sensor.kospel_ppe4_water_temperature"].state == "26.6"
     assert states["sensor.kospel_ppe4_target_temperature"].state == "50.0"
     assert states["sensor.kospel_ppe4_maximum_temperature"].state == "60.0"
+    assert states["sensor.kospel_ppe4_error"].state == "OK"
     assert "water_heater." in " ".join(states)
+
+
+async def test_error_code_is_exposed(hass: HomeAssistant, aioclient_mock) -> None:
+    """An error code in a slot shows up on the error and problem sensors."""
+    _mock_device(aioclient_mock, {"1131": 4})
+    await _setup_entry(hass)
+
+    error = hass.states.get("sensor.kospel_ppe4_error")
+    assert error is not None
+    assert error.state == "4: Temperature sensor error, negative power"
+    assert error.attributes["errors"][0]["code"] == 4
+    assert error.attributes["registers"] == {"1130": 0, "1131": 4, "1132": 0, "1133": 0}
+
+    problem = hass.states.get("binary_sensor.kospel_ppe4_problem")
+    assert problem is not None
+    assert problem.state == "on"
+
+
+async def test_unknown_error_value_is_visible(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """A code outside the catalogue still raises the problem sensor."""
+    _mock_device(aioclient_mock, {"1132": 99})
+    await _setup_entry(hass)
+
+    error = hass.states.get("sensor.kospel_ppe4_error")
+    assert error is not None
+    assert "99" in error.state
+    assert error.attributes["unknown_values"] == [99]
+    assert hass.states.get("binary_sensor.kospel_ppe4_problem").state == "on"
 
 
 async def test_set_temperature_writes_whole_group(

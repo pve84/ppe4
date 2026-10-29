@@ -196,26 +196,16 @@ REGISTER_SPECS: Final[tuple[RegisterSpec, ...]] = (
     ),
 )
 
-#: Specification used for the optional fault register (raw status word).
-FAULT_SPEC: Final = RegisterSpec(
-    key="fault_code",
-    register=0,
-    translation_key="fault_code",
-    scale=1.0,
-    unit=None,
-    device_class=None,
-    state_class=None,
-    icon="mdi:alert-circle-outline",
-)
+#: Registers that carry the active error codes (inferred from the vendor app:
+#: four consecutive zero-initialised slots in the live parameter block).
+DEFAULT_ERROR_REGISTERS: Final = (1130, 1131, 1132, 1133)
 
-#: Values accepted by the ``fault_encoding`` option.
-FAULT_ENCODING_BITMASK: Final = "bitmask"
-FAULT_ENCODING_CODE: Final = "code"
-FAULT_ENCODING_NONE: Final = "none"
-FAULT_ENCODINGS: Final = (
-    FAULT_ENCODING_NONE,
-    FAULT_ENCODING_BITMASK,
-    FAULT_ENCODING_CODE,
+#: How the error registers are decoded.
+ERROR_ENCODING_CODE: Final = "code"
+ERROR_ENCODING_BITMASK: Final = "bitmask"
+ERROR_ENCODINGS: Final = (
+    ERROR_ENCODING_CODE,
+    ERROR_ENCODING_BITMASK,
 )
 
 #: Temperature limits used by the water heater entity.

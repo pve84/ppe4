@@ -34,32 +34,31 @@
     "step": {
       "init": {
         "title": "KOSPEL PPE4 options",
-        "description": "Polling interval, fault decoding and register overrides. The default register map was recovered from the vendor app; units are known for the live block, the physical assignment is inferred.",
+        "description": "Polling interval, error decoding and register overrides. The default register map was recovered from the vendor app and verified against hardware.",
         "data": {
           "scan_interval": "Polling interval (seconds)",
-          "fault_encoding": "Fault register encoding",
-          "fault_register": "Fault register (optional)",
+          "error_encoding": "Error register encoding",
+          "error_registers": "Error registers",
           "registers": "Register overrides (JSON)"
         },
         "data_description": {
           "scan_interval": "How often the live register blocks are read.",
-          "fault_encoding": "How the fault register is decoded: no fault handling, bitmask (bit n = catalogue code n+1) or a single code.",
-          "fault_register": "Register that carries the fault word. Leave empty when unknown.",
-          "registers": "Optional JSON overrides, for example {\"current_temperature\": 1388, \"target_temperature\": [1390, 1.0]}."
+          "error_encoding": "Code: each register holds one error code (1-29). Bitmask: each bit is an error code (bit 0 = code 1).",
+          "error_registers": "Comma separated registers that carry error codes. Default 1130,1131,1132,1133.",
+          "registers": "Optional JSON overrides, for example {\"current_temperature\": 1135, \"target_temperature\": [1391, 0.1]}."
         }
       }
     },
     "error": {
       "invalid_registers": "The register overrides are not valid JSON or contain an unknown key.",
-      "fault_register_required": "A fault register is required when fault decoding is enabled."
+      "error_registers_required": "Enter at least one valid error register number."
     }
   },
   "selector": {
-    "fault_encoding": {
+    "error_encoding": {
       "options": {
-        "none": "No fault handling",
-        "bitmask": "Bitmask (bit n = code n+1)",
-        "code": "Single fault code"
+        "code": "One error code per register",
+        "bitmask": "Bitmask (bit n = code n+1)"
       }
     }
   },
@@ -73,26 +72,23 @@
       "inlet_temperature": {
         "name": "Inlet temperature"
       },
+      "current_temperature": {
+        "name": "Water temperature"
+      },
       "flow_rate": {
         "name": "Flow rate"
       },
       "power": {
         "name": "Heater power"
       },
-      "current_temperature": {
-        "name": "Water temperature"
-      },
       "target_temperature": {
         "name": "Target temperature"
       },
-      "fault_code": {
-        "name": "Fault code"
-      },
-      "active_faults": {
-        "name": "Active faults"
-      },
       "max_temperature": {
         "name": "Maximum temperature"
+      },
+      "error": {
+        "name": "Error"
       }
     },
     "binary_sensor": {

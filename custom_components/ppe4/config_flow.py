@@ -15,20 +15,21 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import Ppe4Client, Ppe4Error
 from .const import (
+    DEFAULT_ERROR_REGISTERS,
     DEFAULT_NAME,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    FAULT_ENCODINGS,
-    FAULT_ENCODING_NONE,
+    ERROR_ENCODING_CODE,
+    ERROR_ENCODINGS,
     LIVE_BLOCKS,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     REGISTER_SPECS,
 )
 from .registers import (
-    OPTION_FAULT_ENCODING,
-    OPTION_FAULT_REGISTER,
+    OPTION_ERROR_ENCODING,
+    OPTION_ERROR_REGISTERS,
     OPTION_REGISTERS,
     OPTION_SCAN_INTERVAL,
 )
@@ -45,6 +46,23 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 _REGISTER_KEYS = {spec.key for spec in REGISTER_SPECS}
+
+
+def _parse_error_registers(raw: str) -> list[int]:
+    """Parse a comma separated list of error registers."""
+    registers: list[int] = []
+    for item in raw.replace(";", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            register = int(item)
+        except ValueError:
+            return []
+        if register <= 0:
+            return []
+        registers.append(register)
+    return registers
 
 
 class Ppe4ConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -164,7 +182,7 @@ def _parse_overrides(raw: str) -> dict[str, Any]:
 
 
 class Ppe4OptionsFlow(OptionsFlow):
-    """Options for polling, fault handling and register overrides."""
+    """Options for polling, error decoding and register overrides."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -175,6 +193,10 @@ class Ppe4OptionsFlow(OptionsFlow):
         existing_overrides = json.dumps(
             options.get(OPTION_REGISTERS, {}), indent=2
         )
+        default_error_registers = options.get(
+            OPTION_ERROR_REGISTERS,
+            ",".join(str(register) for register in DEFAULT_ERROR_REGISTERS),
+        )
 
         if user_input is not None:
             try:
@@ -182,56 +204,58 @@ class Ppe4OptionsFlow(OptionsFlow):
             except ValueError:
                 errors["base"] = "invalid_registers"
             else:
-                encoding = user_input[OPTION_FAULT_ENCODING]
-                fault_register = user_input.get(OPTION_FAULT_REGISTER)
-                if encoding != FAULT_ENCODING_NONE and not fault_register:
-                    errors["base"] = "fault_register_required"
+                error_registers = str(user_input.get(OPTION_ERROR_REGISTERS, ""))
+                if not _parse_error_registers(error_registers):
+                    errors["base"] = "error_registers_required"
                 else:
-                    new_options: dict[str, Any] = {
-                        OPTION_SCAN_INTERVAL: int(user_input[OPTION_SCAN_INTERVAL]),
-                        OPTION_FAULT_ENCODING: encoding,
-                        OPTION_REGISTERS: overrides,
-                    }
-                    if fault_register:
-                        new_options[OPTION_FAULT_REGISTER] = int(fault_register)
-                    return self.async_create_entry(title="", data=new_options)
+                    return self.async_create_entry(
+                        title="",
+                        data={
+                            OPTION_SCAN_INTERVAL: int(
+                                user_input[OPTION_SCAN_INTERVAL]
+                            ),
+                            OPTION_ERROR_ENCODING: user_input[OPTION_ERROR_ENCODING],
+                            OPTION_ERROR_REGISTERS: error_registers,
+                            OPTION_REGISTERS: overrides,
+                        },
+                    )
 
-        schema_dict: dict[Any, Any] = {
-            vol.Required(
-                OPTION_SCAN_INTERVAL,
-                default=options.get(OPTION_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-            ): vol.All(
-                vol.Coerce(int),
-                vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-            ),
-            vol.Required(
-                OPTION_FAULT_ENCODING,
-                default=options.get(OPTION_FAULT_ENCODING, FAULT_ENCODING_NONE),
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=list(FAULT_ENCODINGS),
-                    translation_key="fault_encoding",
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            ),
-            vol.Optional(
-                OPTION_REGISTERS, default=existing_overrides
-            ): selector.TextSelector(
-                selector.TextSelectorConfig(
-                    multiline=True, type=selector.TextSelectorType.TEXT
-                )
-            ),
-        }
-        fault_default = options.get(OPTION_FAULT_REGISTER)
-        if fault_default is not None:
-            schema_dict[
-                vol.Optional(OPTION_FAULT_REGISTER, default=fault_default)
-            ] = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
-        else:
-            schema_dict[vol.Optional(OPTION_FAULT_REGISTER)] = vol.All(
-                vol.Coerce(int), vol.Range(min=1, max=65535)
-            )
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    OPTION_SCAN_INTERVAL,
+                    default=options.get(OPTION_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+                ),
+                vol.Required(
+                    OPTION_ERROR_ENCODING,
+                    default=options.get(OPTION_ERROR_ENCODING, ERROR_ENCODING_CODE),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=list(ERROR_ENCODINGS),
+                        translation_key="error_encoding",
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    OPTION_ERROR_REGISTERS, default=default_error_registers
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT
+                    )
+                ),
+                vol.Optional(
+                    OPTION_REGISTERS, default=existing_overrides
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        multiline=True, type=selector.TextSelectorType.TEXT
+                    )
+                ),
+            }
+        )
 
         return self.async_show_form(
-            step_id="init", data_schema=vol.Schema(schema_dict), errors=errors
+            step_id="init", data_schema=schema, errors=errors
         )
