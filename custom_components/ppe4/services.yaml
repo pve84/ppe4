@@ -1,0 +1,46 @@
+read_registers:
+  name: Read registers
+  description: Read a block of registers directly from the heater.
+  fields:
+    entry_id:
+      name: Config entry
+      description: Target heater when more than one is configured.
+      selector:
+        text:
+    start:
+      name: Start register
+      description: First register of the block.
+      required: true
+      example: 1388
+      selector:
+        number:
+          min: 1
+          max: 65535
+          mode: box
+    count:
+      name: Count
+      description: Number of registers to read.
+      required: true
+      example: 8
+      selector:
+        number:
+          min: 1
+          max: 256
+          mode: box
+
+write_registers:
+  name: Write registers
+  description: Write register values to the heater.
+  fields:
+    entry_id:
+      name: Config entry
+      description: Target heater when more than one is configured.
+      selector:
+        text:
+    registers:
+      name: Registers
+      description: Mapping of register number to integer value.
+      required: true
+      example: '{"1390": 45}'
+      selector:
+        object:

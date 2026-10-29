@@ -1,0 +1,109 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "KOSPEL PPE4",
+        "description": "Enter the address of the heater's Wi-Fi module. The app talks to it over plain HTTP on the local network.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the Wi-Fi module (for example 192.168.8.1 in setup mode).",
+          "port": "HTTP port of the module; usually 80."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure KOSPEL PPE4",
+        "description": "Update the address of the heater's Wi-Fi module.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not read registers from the module. Check the address and that Home Assistant is on the same network as the heater."
+    },
+    "abort": {
+      "already_configured": "This heater is already configured.",
+      "reconfigure_successful": "Reconfiguration was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "KOSPEL PPE4 options",
+        "description": "Polling interval, fault decoding and register overrides. The default register map was recovered from the vendor app; units are known for the live block, the physical assignment is inferred.",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "fault_encoding": "Fault register encoding",
+          "fault_register": "Fault register (optional)",
+          "registers": "Register overrides (JSON)"
+        },
+        "data_description": {
+          "scan_interval": "How often the live register blocks are read.",
+          "fault_encoding": "How the fault register is decoded: no fault handling, bitmask (bit n = catalogue code n+1) or a single code.",
+          "fault_register": "Register that carries the fault word. Leave empty when unknown.",
+          "registers": "Optional JSON overrides, for example {\"current_temperature\": 1388, \"target_temperature\": [1390, 1.0]}."
+        }
+      }
+    },
+    "error": {
+      "invalid_registers": "The register overrides are not valid JSON or contain an unknown key.",
+      "fault_register_required": "A fault register is required when fault decoding is enabled."
+    }
+  },
+  "selector": {
+    "fault_encoding": {
+      "options": {
+        "none": "No fault handling",
+        "bitmask": "Bitmask (bit n = code n+1)",
+        "code": "Single fault code"
+      }
+    }
+  },
+  "entity": {
+    "water_heater": {
+      "water_heater": {
+        "name": "Water heater"
+      }
+    },
+    "sensor": {
+      "inlet_temperature": {
+        "name": "Inlet temperature"
+      },
+      "outlet_temperature": {
+        "name": "Outlet temperature"
+      },
+      "flow_rate": {
+        "name": "Flow rate"
+      },
+      "power": {
+        "name": "Heater power"
+      },
+      "current_temperature": {
+        "name": "Water temperature"
+      },
+      "target_temperature": {
+        "name": "Target temperature"
+      },
+      "fault_code": {
+        "name": "Fault code"
+      },
+      "active_faults": {
+        "name": "Active faults"
+      }
+    },
+    "binary_sensor": {
+      "problem": {
+        "name": "Problem"
+      }
+    },
+    "button": {
+      "refresh": {
+        "name": "Refresh"
+      }
+    }
+  }
+}
