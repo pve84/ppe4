@@ -55,7 +55,7 @@ def test_error_config_defaults() -> None:
     """Errors are decoded from the four default slots."""
     config = resolve_error_config({})
     assert config is not None
-    assert config.registers == (1130, 1131, 1132, 1133)
+    assert config.registers == (1253,)
     assert config.encoding == ERROR_ENCODING_CODE
 
 
@@ -75,16 +75,16 @@ def test_error_config_disabled_without_registers() -> None:
 def test_decode_code_slots() -> None:
     """Each register holds one catalogue code."""
     config = resolve_error_config({})
-    state = decode_errors({1130: 0, 1131: 4, 1132: 0, 1133: 0}, config)
+    state = decode_errors({1253: 4}, config)
     assert state.codes == (4,)
     assert state.active is True
-    assert state.values == {1130: 0, 1131: 4, 1132: 0, 1133: 0}
+    assert state.values == {1253: 4}
 
 
 def test_decode_no_errors() -> None:
     """All-zero slots mean OK."""
     config = resolve_error_config({})
-    state = decode_errors({1130: 0, 1131: 0, 1132: 0, 1133: 0}, config)
+    state = decode_errors({1253: 0}, config)
     assert state.active is False
     assert state.codes == ()
 
@@ -92,7 +92,7 @@ def test_decode_no_errors() -> None:
 def test_decode_code_out_of_catalogue() -> None:
     """A value outside 1..29 is reported as unknown, not silently dropped."""
     config = resolve_error_config({})
-    state = decode_errors({1130: 99, 1131: 0, 1132: 0, 1133: 0}, config)
+    state = decode_errors({1253: 99}, config)
     assert state.codes == ()
     assert state.unknown == (99,)
     assert state.active is True
@@ -102,14 +102,14 @@ def test_decode_bitmask() -> None:
     """Bit n maps to catalogue code n+1."""
     config = resolve_error_config({"error_encoding": "bitmask"})
     assert config is not None
-    state = decode_errors({1130: 0b1010}, config)
+    state = decode_errors({1253: 0b1010}, config)
     assert state.codes == (2, 4)
 
 
 def test_decode_ignores_invalid_sentinel() -> None:
     """65535 means 'no reading' and is not an error."""
     config = resolve_error_config({})
-    state = decode_errors({1130: 65535}, config)
+    state = decode_errors({1253: 65535}, config)
     assert state.codes == ()
     assert state.unknown == ()
     assert state.active is False

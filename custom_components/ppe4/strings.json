@@ -44,7 +44,7 @@
         "data_description": {
           "scan_interval": "How often the live register blocks are read.",
           "error_encoding": "Code: each register holds one error code (1-29). Bitmask: each bit is an error code (bit 0 = code 1).",
-          "error_registers": "Comma separated registers that carry error codes. Default 1130,1131,1132,1133.",
+          "error_registers": "Comma separated registers that carry error codes. Default 1253 (the code shown on the heater display).",
           "registers": "Optional JSON overrides, for example {\"current_temperature\": 1135, \"target_temperature\": [1391, 0.1]}."
         }
       }

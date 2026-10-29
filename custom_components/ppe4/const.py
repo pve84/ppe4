@@ -196,9 +196,25 @@ REGISTER_SPECS: Final[tuple[RegisterSpec, ...]] = (
     ),
 )
 
-#: Registers that carry the active error codes (inferred from the vendor app:
-#: four consecutive zero-initialised slots in the live parameter block).
-DEFAULT_ERROR_REGISTERS: Final = (1130, 1131, 1132, 1133)
+#: Register that carries the controller's active error code (the code shown on
+#: the heater's seven-segment display).  Verified on hardware: 1253 read ``4``
+#: while the unit displayed E04; 1252 next to it mirrors the outlet temperature.
+DEFAULT_ERROR_REGISTERS: Final = (1253,)
+
+#: Panel error codes (E01-E11) documented in the PPE4 installation manual.
+PANEL_ERRORS: Final[dict[int, str]] = {
+    1: "E01 Power Off - one or more triacs failed",
+    2: "E02 TIN - inlet sensor failure, missing or shorted to ground",
+    3: "E03 TOUT - outlet sensor failure, missing or shorted to ground",
+    4: "E04 OUT/IN - sensor connections reversed or altered sensor response",
+    5: "E05 AIR2 - air in the water circuit, vane flow meter dirty or failed",
+    6: "E06 AIR - air in the circuit, pressure switch triggered, supply phase lost",
+    7: "E07 T MAX - transient flow fluctuation, sudden setting change, control failure",
+    8: "E08 FLOW - air in the circuit or water supply pressure too high",
+    9: "E09 3F - no mains sync signal, supply phase voltage lost",
+    10: "E10 CONFIG - illegal hardware configuration",
+    11: "E11 Power Off - control system failure",
+}
 
 #: How the error registers are decoded.
 ERROR_ENCODING_CODE: Final = "code"

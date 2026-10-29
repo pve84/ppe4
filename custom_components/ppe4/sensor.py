@@ -16,7 +16,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import FAULTS, FAULTS_PL
+from .const import FAULTS, FAULTS_PL, PANEL_ERRORS
 from .coordinator import Ppe4Coordinator
 from .entity import Ppe4Entity
 
@@ -24,6 +24,18 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _error_text(code: int) -> str:
+    """Return the best description for one error code.
+
+    The heater's own display uses the E01-E11 codes from the installation
+    manual; codes without a panel meaning fall back to the diagnostic
+    catalogue shipped in the vendor app.
+    """
+    if code in PANEL_ERRORS:
+        return f"{code} ({PANEL_ERRORS[code].split(' ', 1)[0]}): {PANEL_ERRORS[code].split(' ', 1)[1]}"
+    return f"{code}: {FAULTS.get(code, f'Unknown error {code}')}"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,10 +130,7 @@ class Ppe4ErrorSensor(Ppe4Entity, SensorEntity):
         state = self.coordinator.data.error
         if not state.active:
             return "OK"
-        parts = [
-            f"{code}: {FAULTS.get(code, f'Unknown error {code}')}"
-            for code in state.codes
-        ]
+        parts = [_error_text(code) for code in state.codes]
         parts.extend(f"Unknown code {value}" for value in state.unknown)
         return "; ".join(parts)[:255]
 
@@ -136,6 +145,8 @@ class Ppe4ErrorSensor(Ppe4Entity, SensorEntity):
             "errors": [
                 {
                     "code": code,
+                    "panel_code": f"E{code:02d}" if code in PANEL_ERRORS else None,
+                    "panel_text": PANEL_ERRORS.get(code),
                     "text": FAULTS.get(code, f"Unknown error {code}"),
                     "text_pl": FAULTS_PL.get(code, ""),
                 }

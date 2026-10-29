@@ -57,6 +57,7 @@ BLOCKS = {
         "1151": 2,
         "1152": 34,
     },
+    (1253, 1): {"1253": 0},
     (1388, 8): {
         "1388": 600,
         "1389": 0,
@@ -145,14 +146,16 @@ async def test_setup_creates_entities(hass: HomeAssistant, mock_device) -> None:
 
 async def test_error_code_is_exposed(hass: HomeAssistant, aioclient_mock) -> None:
     """An error code in a slot shows up on the error and problem sensors."""
-    _mock_device(aioclient_mock, {"1131": 4})
+    _mock_device(aioclient_mock, {"1253": 4})
     await _setup_entry(hass)
 
     error = hass.states.get("sensor.kospel_ppe4_error")
     assert error is not None
-    assert error.state == "4: Temperature sensor error, negative power"
+    assert error.state.startswith("4 (E04): ")
+    assert "sensor connections reversed" in error.state
     assert error.attributes["errors"][0]["code"] == 4
-    assert error.attributes["registers"] == {"1130": 0, "1131": 4, "1132": 0, "1133": 0}
+    assert error.attributes["errors"][0]["panel_code"] == "E04"
+    assert error.attributes["registers"] == {"1253": 4}
 
     problem = hass.states.get("binary_sensor.kospel_ppe4_problem")
     assert problem is not None
@@ -163,7 +166,7 @@ async def test_unknown_error_value_is_visible(
     hass: HomeAssistant, aioclient_mock
 ) -> None:
     """A code outside the catalogue still raises the problem sensor."""
-    _mock_device(aioclient_mock, {"1132": 99})
+    _mock_device(aioclient_mock, {"1253": 99})
     await _setup_entry(hass)
 
     error = hass.states.get("sensor.kospel_ppe4_error")
